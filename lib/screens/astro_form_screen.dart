@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../models/astro_models.dart';
 import '../services/astro_service.dart';
 import 'natal_chart_screen.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Убедись, что этот импорт есть
 
 class AstroFormScreen extends StatefulWidget {
   const AstroFormScreen({super.key});
@@ -21,15 +22,31 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
   TimeOfDay? _selectedTime;
   bool _isLoading = false; // Состояние загрузки
 
-  // ВНИМАНИЕ: Ключ API для OpenCageData.
-  // В реальном приложении этот ключ НЕ ДОЛЖЕН храниться так в открытом виде.
-  // Рассмотрите использование переменных окружения, flutter_dotenv, или серверного прокси.
-  static const String apiKey = '271307c7f21b4bd898e25b76561835aa';
+  // ВНИМАНИЕ: API-ключ теперь загружается из .env файла
+  // Убедитесь, что config.env существует в корне проекта и содержит OPENCAGEDATA_API_KEY
+  final String _openCageDataApiKey = dotenv.env['OPENCAGEDATA_API_KEY'] ?? '';
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _placeController.dispose();
+    super.dispose();
+  }
 
   /// Асинхронно получает географические координаты и смещение UTC
   /// для заданного места с помощью OpenCageData API.
   Future<Coordinates?> _fetchCoordinates(String place) async {
-    final url = Uri.parse('https://api.opencagedata.com/geocode/v1/json?q=$place&key=$apiKey&language=ru');
+    if (_openCageDataApiKey.isEmpty) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('API ключ OpenCageData не найден. Пожалуйста, проверьте config.env.')),
+      );
+      return null;
+    }
+
+    final encodedPlace = Uri.encodeComponent(place);
+    final url = Uri.parse('https://api.opencagedata.com/geocode/v1/json?q=$encodedPlace&key=$_openCageDataApiKey&language=ru');
+
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -38,11 +55,9 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
           final result = data['results'][0];
           final lat = result['geometry']['lat'];
           final lng = result['geometry']['lng'];
-          // OpenCageData предоставляет offset_string, например, "+03:00"
           final timezoneOffsetString = result['annotations']['timezone']['offset_string'];
           return Coordinates(latitude: lat, longitude: lng, utcOffset: timezoneOffsetString);
         } else {
-          // Нет результатов для данного места
           if (!mounted) return null;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Место не найдено. Пожалуйста, проверьте написание.')),
@@ -50,16 +65,14 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
           return null;
         }
       } else {
-        // Ошибка HTTP-статуса
         if (!mounted) return null;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка API геокодирования: ${response.statusCode}')),
+          SnackBar(content: Text('Ошибка API геокодирования: ${response.statusCode}. Попробуйте позже.')),
         );
         print('OpenCageData API error: ${response.statusCode} - ${response.body}');
         return null;
       }
     } catch (e) {
-      // Ошибка сети или парсинга
       if (!mounted) return null;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ошибка сети при получении координат. Проверьте подключение.')),
@@ -77,7 +90,7 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
         _isLoading = true; // Начинаем загрузку
       });
 
-      // Комбинируем выбранные дату и время
+      // Комбинируем выбранные дату и время (это будет локальное время рождения)
       final birthDateTime = DateTime(
         _selectedDate!.year,
         _selectedDate!.month,
@@ -89,18 +102,17 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
       final coords = await _fetchCoordinates(_placeController.text);
 
       if (!mounted) {
-        setState(() { _isLoading = false; }); // Завершаем загрузку, если виджет уже не смонтирован
+        setState(() { _isLoading = false; });
         return;
       }
 
       if (coords == null) {
-        setState(() { _isLoading = false; }); // Завершаем загрузку при ошибке координат
+        setState(() { _isLoading = false; });
         // Сообщение уже показано в _fetchCoordinates
         return;
       }
 
       // --- КОРРЕКТНОЕ ПРЕОБРАЗОВАНИЕ ВРЕМЕНИ В UTC ---
-      // Разбираем строку смещения UTC (например, "+03:00" или "-05:00")
       Duration timezoneOffset;
       try {
         final sign = coords.utcOffset.substring(0, 1);
@@ -124,7 +136,11 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
         return;
       }
 
-      // Если birthDateTime - это локальное время, переводим его в UTC для астрологических расчетов.
+      // Преобразуем локальное время рождения в UTC
+      // Важно: если birthDateTime уже содержит информацию о временной зоне,
+      // то toUtc() учтет ее. Если нет (DateTime без временной зоны),
+      // то subtract(timezoneOffset) является правильным подходом.
+      // В Flutter, DateTime без временной зоны считается локальным.
       final birthDateTimeUtc = birthDateTime.subtract(timezoneOffset);
 
       // Используем AstroService.calculateNatalChart для получения полной карты
@@ -134,7 +150,7 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
         birthPlace: _placeController.text,
         latitude: coords.latitude,
         longitude: coords.longitude,
-        utcOffset: coords.utcOffset, // Передаем смещение, если оно нужно для отображения
+        utcOffset: coords.utcOffset, // Передаем смещение для информации, если нужно
         aspectsOrb: 8.0, // Пример орбиса для аспектов
       );
 
@@ -163,38 +179,46 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
   }
 
   @override
-  void dispose() {
-    _nameController.dispose();
-    _placeController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Введите данные рождения')),
+      appBar: AppBar(
+        title: const Text('Введите данные рождения'),
+        // Явно задаем цвета для AppBar, чтобы он был виден
+        backgroundColor: Theme.of(context).colorScheme.primary, // Используем основной цвет из темы
+        foregroundColor: Theme.of(context).colorScheme.onPrimary, // Цвет текста на основном цвете
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, // Растягиваем элементы по ширине
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Имя'),
+                decoration: const InputDecoration(
+                  labelText: 'Имя',
+                  border: OutlineInputBorder(), // Добавим рамку для лучшей видимости
+                ),
                 validator: (value) => value == null || value.isEmpty ? 'Введите имя' : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16), // Увеличим отступ
               TextFormField(
                 controller: _placeController,
-                decoration: const InputDecoration(labelText: 'Место рождения'),
+                decoration: const InputDecoration(
+                  labelText: 'Место рождения',
+                  border: OutlineInputBorder(), // Добавим рамку
+                ),
                 validator: (value) => value == null || value.isEmpty ? 'Введите место рождения' : null,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               ListTile(
-                title: Text(_selectedDate == null
-                    ? 'Выберите дату рождения'
-                    : 'Дата рождения: ${_selectedDate!.day}.${_selectedDate!.month}.${_selectedDate!.year}'),
+                title: Text(
+                  _selectedDate == null
+                      ? 'Выберите дату рождения'
+                      : 'Дата рождения: ${_selectedDate!.day}.${_selectedDate!.month}.${_selectedDate!.year}',
+                  style: Theme.of(context).textTheme.bodyLarge, // Чтобы текст был виден
+                ),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
                   final date = await showDatePicker(
@@ -206,10 +230,14 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
                   if (date != null) setState(() => _selectedDate = date);
                 },
               ),
+              const SizedBox(height: 8), // Небольшой отступ между ListTile
               ListTile(
-                title: Text(_selectedTime == null
-                    ? 'Выберите время рождения'
-                    : 'Время рождения: ${_selectedTime!.format(context)}'),
+                title: Text(
+                  _selectedTime == null
+                      ? 'Выберите время рождения'
+                      : 'Время рождения: ${_selectedTime!.format(context)}',
+                  style: Theme.of(context).textTheme.bodyLarge, // Чтобы текст был виден
+                ),
                 trailing: const Icon(Icons.access_time),
                 onTap: () async {
                   final time = await showTimePicker(
@@ -221,9 +249,13 @@ class _AstroFormScreenState extends State<AstroFormScreen> {
               ),
               const SizedBox(height: 24),
               _isLoading
-                  ? const CircularProgressIndicator() // Показываем индикатор загрузки
+                  ? const Center(child: CircularProgressIndicator()) // Центрируем индикатор
                   : ElevatedButton(
                       onPressed: _submit,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        textStyle: const TextStyle(fontSize: 18),
+                      ),
                       child: const Text('Рассчитать карту'),
                     ),
             ],

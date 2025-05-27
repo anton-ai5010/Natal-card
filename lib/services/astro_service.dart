@@ -5,10 +5,11 @@ import '../models/astro_models.dart';
 class AstroService {
   static const double degreesToRadians = math.pi / 180;
   static const double radiansToDegrees = 180 / math.pi;
-  static const double eclipticObliquity = 23.4397; // Наклон эклиптики
+  static const double eclipticObliquity = 23.4397; // Наклон эклиптики (среднее значение на J2000.0)
 
   /// Вычисляет Юлианскую дату (Julian Date - JD) для заданной даты и времени.
   /// JD - это непрерывное число дней с определенной начальной точки.
+  /// Принимает время в UT (Universal Time).
   static double getJulianDate(DateTime dateTime) {
     int year = dateTime.year;
     int month = dateTime.month;
@@ -44,8 +45,6 @@ class AstroService {
 
   /// Определяет знак Зодиака по заданной эклиптической долготе.
   static ZodiacSign getZodiacSign(double longitude) {
-    // Делим долготу на 30 градусов (размер знака) и берем целую часть как индекс.
-    // Используем % 12, чтобы убедиться, что индекс находится в пределах 0-11.
     final index = (longitude ~/ 30) % 12;
     return ZodiacSign.values[index];
   }
@@ -81,7 +80,7 @@ class AstroService {
 
   /// Определяет дом, в котором находится планета, на основе ее долготы и списка домов.
   static int getHouseOfPlanet(double planetLongitude, List<House> houses) {
-    // Сортируем дома по куспидам на всякий случай, хотя для Equal Houses это не так критично
+    // Сортируем дома по куспидам для надежности, хотя для Equal Houses это не так критично
     houses.sort((a, b) => a.cusp.compareTo(b.cusp));
 
     for (int i = 0; i < houses.length; i++) {
@@ -100,12 +99,13 @@ class AstroService {
         }
       }
     }
-    // Если по какой-то причине дом не найден (маловероятно при корректных данных)
-    return 0; // Или можно выбросить исключение
+    // Если по какой-то причине дом не найден (крайне маловероятно при корректных данных)
+    // В случае ошибки вернем 0 или можно выбросить исключение.
+    return 0;
   }
 
-
   /// --- Методы для расчета позиций планет (упрощенные формулы) ---
+  /// Все формулы основаны на Юлианской дате, отсчитываемой от J2000.0 (JD 2451545.0)
 
   static PlanetPosition calculateSunPosition(DateTime dateTime) {
     double jd = getJulianDate(dateTime);
@@ -148,7 +148,7 @@ class AstroService {
     double d = jd - 2451545.0;
     double t = d / 36525.0; // Юлианские столетия с J2000.0
     double L = normalizeAngle(252.2509 + 149472.6747 * t); // Средняя долгота
-    double M = normalizeAngle(357.5291 + 35999.0503 * t); // Средняя аномалия Земли
+    double M = normalizeAngle(357.5291 + 35999.0503 * t); // Средняя аномалия Земли (для внешних планет)
     double mRad = M * degreesToRadians;
     double C = 23.4400 * math.sin(mRad) // Центр
         + 2.9818 * math.sin(2 * mRad)
@@ -203,25 +203,56 @@ class AstroService {
     return createPlanetPosition(Planet.jupiter, longitude);
   }
 
-  // --- Заглушки для оставшихся планет (требуют реализации формул) ---
   static PlanetPosition calculateSaturnPosition(DateTime dateTime) {
-    // TODO: Добавить формулы для Сатурна
-    return createPlanetPosition(Planet.saturn, 0.0); // Временная заглушка
+    double jd = getJulianDate(dateTime);
+    double d = jd - 2451545.0;
+    double t = d / 36525.0;
+    double L = normalizeAngle(50.0768 + 1222.0911 * t);
+    double M = normalizeAngle(357.5291 + 35999.0503 * t);
+    double mRad = M * degreesToRadians;
+    double C = 6.4442 * math.sin(mRad)
+        + 0.1260 * math.sin(2 * mRad);
+    double longitude = normalizeAngle(L + C);
+    return createPlanetPosition(Planet.saturn, longitude);
   }
 
   static PlanetPosition calculateUranusPosition(DateTime dateTime) {
-    // TODO: Добавить формулы для Урана
-    return createPlanetPosition(Planet.uranus, 0.0); // Временная заглушка
+    double jd = getJulianDate(dateTime);
+    double d = jd - 2451545.0;
+    double t = d / 36525.0;
+    double L = normalizeAngle(314.0550 + 428.3297 * t);
+    double M = normalizeAngle(357.5291 + 35999.0503 * t);
+    double mRad = M * degreesToRadians;
+    double C = 2.4593 * math.sin(mRad)
+        + 0.0336 * math.sin(2 * mRad);
+    double longitude = normalizeAngle(L + C);
+    return createPlanetPosition(Planet.uranus, longitude);
   }
 
   static PlanetPosition calculateNeptunePosition(DateTime dateTime) {
-    // TODO: Добавить формулы для Нептуна
-    return createPlanetPosition(Planet.neptune, 0.0); // Временная заглушка
+    double jd = getJulianDate(dateTime);
+    double d = jd - 2451545.0;
+    double t = d / 36525.0;
+    double L = normalizeAngle(304.3414 + 218.4239 * t);
+    double M = normalizeAngle(357.5291 + 35999.0503 * t);
+    double mRad = M * degreesToRadians;
+    double C = 1.0967 * math.sin(mRad)
+        + 0.0070 * math.sin(2 * mRad);
+    double longitude = normalizeAngle(L + C);
+    return createPlanetPosition(Planet.neptune, longitude);
   }
 
   static PlanetPosition calculatePlutoPosition(DateTime dateTime) {
-    // TODO: Добавить формулы для Плутона
-    return createPlanetPosition(Planet.pluto, 0.0); // Временная заглушка
+    double jd = getJulianDate(dateTime);
+    double d = jd - 2451545.0;
+    double t = d / 36525.0;
+    // Для Плутона упрощенные формулы очень неточны, это скорее заглушка
+    double L = normalizeAngle(238.9959 + 145.4853 * t);
+    double M = normalizeAngle(357.5291 + 35999.0503 * t);
+    double mRad = M * degreesToRadians;
+    double C = 0.8117 * math.sin(mRad); // Очень упрощенно
+    double longitude = normalizeAngle(L + C);
+    return createPlanetPosition(Planet.pluto, longitude);
   }
 
   /// --- Общий метод для расчета всех положений планет ---
@@ -242,57 +273,65 @@ class AstroService {
 
   /// --- Расчет Local Sidereal Time (Местное Звездное Время) ---
   /// LST критически важно для расчета Асцендента и куспидов домов.
-  /// [dateTime] - дата и время рождения.
+  /// [dateTime] - дата и время рождения в UTC.
   /// [longitude] - географическая долгота места рождения в градусах.
   static double calculateLocalSiderealTime(DateTime dateTime, double longitude) {
     double jd = getJulianDate(dateTime);
     // Часть суток в универсальном времени (UT)
+    // Предполагаем, что dateTime уже в UTC для корректности LST
     double ut = dateTime.hour + dateTime.minute / 60.0 + dateTime.second / 3600.0;
 
     // Расчет юлианских столетий с J2000.0 (JD 2451545.0)
     double T = (jd - 2451545.0) / 36525.0;
 
     // Среднее звездное время в Гринвиче (Greenwich Mean Sidereal Time - GMST) в 0h UT
-    double GMST0 = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
-    GMST0 = normalizeAngle(GMST0);
+    // Переименовано для lowerCamelCase
+    double gmst0 = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
+    gmst0 = normalizeAngle(gmst0);
 
     // Добавляем поправку за время UT
-    double GMST = GMST0 + 360.98564736629 * ut / 24.0;
-    GMST = normalizeAngle(GMST);
+    // Переименовано для lowerCamelCase
+    double gmst = gmst0 + 360.98564736629 * ut / 24.0 * 360; // GMST + 360.98564736629 deg/day * ut_day
+    gmst = normalizeAngle(gmst);
 
     // Местное звездное время (Local Sidereal Time - LST)
-    double LST = GMST + longitude;
-    LST = normalizeAngle(LST);
+    // Переименовано для lowerCamelCase
+    double lst = gmst + longitude;
+    lst = normalizeAngle(lst);
 
-    return LST;
+    return lst;
   }
 
   /// --- Расчет Асцендента ---
-  /// Этот метод является заглушкой и требует более сложной реализации
-  /// с использованием LST, широты и наклона эклиптики.
-  /// Формула для Асцендента сложна из-за работы с квадрантами функции atan.
-  ///
+  /// Приближенная формула для Асцендента.
   /// [lst] - местное звездное время в градусах.
   /// [latitude] - географическая широта места рождения в градусах.
   static double calculateAscendant(double lst, double latitude) {
-    // ВНИМАНИЕ: Это упрощенная заглушка. Для точного расчета Асцендента
-    // требуется более сложная формула, учитывающая квадранты.
-    // Пример начальной формулы (неполной):
-    // double sinAsc = -math.cos(lst * degreesToRadians) /
-    //     (math.cos(latitude * degreesToRadians) * math.sin(eclipticObliquity * degreesToRadians) +
-    //         math.sin(latitude * degreesToRadians) * math.cos(eclipticObliquity * degreesToRadians) * math.tan(lst * degreesToRadians));
-    // double ascendant = math.asin(sinAsc) * radiansToDegrees;
+    double lstRad = lst * degreesToRadians;
+    double latRad = latitude * degreesToRadians;
+    double obliquityRad = eclipticObliquity * degreesToRadians;
 
-    return 0.0; // Временная заглушка.
+    // Упрощенная формула для Асцендента
+    // Это стандартная, но упрощенная тригонометрическая формула
+    double tanAsc = -math.cos(lstRad) / (math.sin(obliquityRad) * math.tan(latRad) + math.cos(obliquityRad) * math.sin(lstRad));
+    double ascendant = math.atan(tanAsc) * radiansToDegrees;
+
+    // Коррекция квадранта для atan
+    if (ascendant < 0) ascendant += 180; // Если отрицательный, добавляем 180
+    if (lst > 180 && ascendant < 360) ascendant += 180; // Коррекция по LST
+    if (lst <= 180 && ascendant > 180) ascendant -= 180; // Коррекция по LST
+
+    return normalizeAngle(ascendant);
   }
 
   /// --- Расчет Медиум Цели (MC) ---
-  /// Этот метод является заглушкой и требует более сложной реализации.
+  /// Приближенная формула для MC.
   /// [lst] - местное звездное время в градусах.
   static double calculateMC(double lst) {
-    // ВНИМАНИЕ: Это упрощенная заглушка. Точный MC = LST - 90,
-    // но с учетом квадрантов.
-    return normalizeAngle(lst + 90); // Временная заглушка, MC = LST + 90 (для северного полушария)
+    // MC = LST + 90 градусов для северного полушария. Это приближение.
+    // Точный расчет MC также требует atan с коррекцией квадрантов.
+    double mc = lst + 90; // Приближение для северного полушария
+    return normalizeAngle(mc);
   }
 
   /// --- Расчет аспектов между планетами ---
@@ -336,7 +375,7 @@ class AstroService {
   /// --- Основной метод для расчета всей натальной карты ---
   /// Этот метод будет агрегировать все расчеты.
   /// [name] - имя пользователя.
-  /// [birthDateTime] - дата и время рождения.
+  /// [birthDateTime] - дата и время рождения в UTC.
   /// [birthPlace] - место рождения.
   /// [latitude] - широта места рождения.
   /// [longitude] - долгота места рождения.
@@ -344,7 +383,7 @@ class AstroService {
   /// [aspectsOrb] - орбис для расчета аспектов.
   static NatalChart calculateNatalChart({
     required String name,
-    required DateTime birthDateTime,
+    required DateTime birthDateTime, // Важно: это время должно быть в UTC
     required String birthPlace,
     required double latitude,
     required double longitude,
@@ -352,35 +391,14 @@ class AstroService {
     double aspectsOrb = 8.0, // Орбис по умолчанию
   }) {
     // 1. Рассчитываем местное звездное время
-    // TODO: Здесь нужно будет привести utcOffset к числу для DateTime с учетом часового пояса
-    // Для начала, можно использовать birthDateTime как оно есть, если оно уже в локальном времени
-    // или перевести его в UT.
-    // Пока что будем использовать birthDateTime напрямую, предполагая, что оно в "местном" времени для расчетов LST.
-    // В реальном приложении нужно будет корректно учесть часовой пояс и UTC.
-    // Например, если birthDateTime это локальное время, нужно его перевести в UTC,
-    // а затем использовать это UTC время для getJulianDate и LST.
-
-    // Пример как перевести локальное время в UTC, если birthDateTime - это локальное время
-    // DateTime birthDateTimeUtc = birthDateTime.toUtc();
-    // double lst = calculateLocalSiderealTime(birthDateTimeUtc, longitude);
-
-    // Для текущего упрощенного примера будем использовать birthDateTime как есть
+    // birthDateTime уже ожидается в UTC, как это сделано в astro_form_screen.dart
     double lst = calculateLocalSiderealTime(birthDateTime, longitude);
 
-
-    // 2. Рассчитываем Асцендент (пока заглушка)
+    // 2. Рассчитываем Асцендент
+    // Теперь calculateAscendant использует LST и широту
     double ascendantLongitude = calculateAscendant(lst, latitude);
-    if (ascendantLongitude == 0.0) {
-      // Если Асцендент еще не реализован, можно использовать фиктивное значение,
-      // или выбросить ошибку, или сделать его 0 (Овен 0 градусов)
-      // В равных домах Асцендент - это куспид 1-го дома
-      // Пока что для Equal Houses без точного Асцендента, можно просто взять 0 градусов Овна для 1 дома.
-      // Но для реальной астрологии, Асцендент ОЧЕНЬ важен.
-      ascendantLongitude = 0.0; // Временное решение для продолжения
-    }
 
-
-    // 3. Рассчитываем куспиды домов
+    // 3. Рассчитываем куспиды домов по системе Равных Домов
     List<House> houses = calculateHousesEqual(ascendantLongitude);
 
     // 4. Рассчитываем позиции всех планет
@@ -399,14 +417,13 @@ class AstroService {
       );
     }).toList();
 
-
     // 6. Рассчитываем аспекты
     List<Aspect> aspects = calculateAspects(updatedPlanetPositions, aspectsOrb);
 
     // 7. Создаем объект NatalChart
     return NatalChart(
       name: name,
-      birthDateTime: birthDateTime,
+      birthDateTime: birthDateTime, // Это UTC время
       birthPlace: birthPlace,
       latitude: latitude,
       longitude: longitude,
