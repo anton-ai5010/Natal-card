@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+# Игнорировать локальные файлы env
+.env
+
+# Игнорировать временные папки macOS
+macos_backup/
